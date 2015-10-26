@@ -21,7 +21,15 @@
     var posTextUpperRight = new Vector(canvas.width-65, 20);
     var posTextUpperLeft = new Vector(8, 20);
     
-    var dt = 0.1;
+    //var dt = 0.1; // Delta Time
+    var deltaTime = 1;  // Time Step
+    var gravationalConstant = 0.001;
+    
+    
+    var spring_constant = 25;
+    var spring_length = 50;
+    var charge_constant = 100;
+    
     
     var ballPos   = new Vector(myCanvas.width/2, myCanvas.height/2)
     var ballSpeed = new Vector(-1, 5)
@@ -178,9 +186,6 @@
     pushNode();
     
 // physics
-    var spring_constant = 25;
-    var spring_length = 50;
-    var charge_constant = 100;
 
 /*    
 function applyChargeForceNode(node1, node2){
@@ -190,15 +195,11 @@ function applyChargeForceNode(node1, node2){
 */
 
 function applySpringForceNode(node1, node2){
-    //node.x += force;
     var x_dist = node2.x - node1.x
-    //var vec_dist = node2.sub(node1);
-    //console.log( vec_dist);
-    //node2 = vec_dist;
     node2.x += (spring_length-x_dist)/spring_constant;
-    //node2 = node2.add5x;
-
 }
+    
+    
 function applyVectorNode(vec1, node1){
     node1.add(vec1);
 }
@@ -348,8 +349,6 @@ function applyForceTree(){
     }
 
 // Physics
-    var gravationalConstant = 0.01;
-    
     function applyGravity(astroBody1, astroBody2){
         var numerator1 = gravationalConstant * astroBody2.mass;
         var numerator2 = gravationalConstant * astroBody1.mass;
@@ -357,14 +356,34 @@ function applyForceTree(){
         var absDisSquared = (distanceVec.x * distanceVec.x + distanceVec.y * distanceVec.y);
         var acc1 = new Vector(numerator1*distanceVec.x/(absDisSquared+1), numerator1*distanceVec.y/(absDisSquared+1));
         var acc2 = new Vector(numerator2*distanceVec.x/(absDisSquared+1), numerator2*distanceVec.y/(absDisSquared+1));
-        astroBody2.speed.add(acc2);
-        astroBody1.speed.add(negVector(acc1));
-    
+        
+        astroBody2.speed.add(acc2.new_mul(deltaTime) );
+        astroBody1.speed.add(negVector(acc1.new_mul(deltaTime)) );
     }
+    
+    
+    function applySpring(astroBody1, astroBody2){
+        var distanceVec = subVector(astroBody1.pos, astroBody2.pos);
+        var disMag = Math.sqrt(distanceVec.x * distanceVec.x + distanceVec.y * distanceVec.y);
+        
+        var springDelta = (spring_length - disMag) * 0.00001 ;
+        
+        // aim for 0.001
+        //var acc = new Vector(springDelta * distanceVec.x, springDelta * distanceVec.y);
+        var acc = distanceVec.new_mul(springDelta);
+        console.log( springDelta ); 
+        
+        astroBody2.speed.sub(acc);
+        astroBody1.speed.add(acc);
+        
+        
+    }
+    
     
     function astroPhysics(astroObj) {  // Collision detection and update frame
         
         // Bounce off walls
+        
         if(astroObj.pos.x + astroObj.speed.x < astroObj.rad || // left wall
            astroObj.pos.x + astroObj.speed.x > canvas.width-astroObj.rad) { // right wall
             astroObj.speed.flipX(); // horzontal bounce
@@ -373,9 +392,26 @@ function applyForceTree(){
            astroObj.pos.y + astroObj.speed.y > canvas.height-astroObj.rad) { // bottom wall
             astroObj.speed.flipY(); // vertical bounce
         }
+        
+
+        /*
+        // Astroid style - comes out of the other side
+        if(astroObj.pos.x < 0) { // left wall
+            astroObj.pos.x += canvas.width;
+        }
+        if(astroObj.pos.x > canvas.width) { // right wall
+            astroObj.pos.x -= canvas.width;
+        }
+        if(astroObj.pos.y < 0) { // top wall
+            astroObj.pos.y += canvas.height;
+        }
+        if(astroObj.pos.y > canvas.height) { // bottom wall
+            astroObj.pos.y -= canvas.height;
+        }
+        */
 
         // move astroObj to next frame
-        astroObj.pos.add( astroObj.speed.new_mul(dt) );
+        astroObj.pos.add( astroObj.speed.new_mul(deltaTime) );
   }
 
 /*******                Event Listerners                     ******/
@@ -401,13 +437,13 @@ function applyForceTree(){
             leftPressed = true;
         } 
         else if(e.keyCode == 8) { // Backspace
-            pushNode();  // it works!
+
         }
         else if(e.keyCode == 9) { // Tab (change select out of canvas)
             
         }
         else if(e.keyCode == 13) { // Enter
-            
+            pushNode();  // it works!
         }
         else if(e.keyCode == 17) { // Ctrl
             
@@ -466,12 +502,18 @@ function applyForceTree(){
             astroPhysics(solarSystem[i]);
         }
 
-        for(var i=1; i< solarSystem.length; i++){ //O(N^2)
-            for(var j=0; j<i; j++){
+        for(var i=1; i< solarSystem.length; i++) { //O(N^2)
+            for(var j=0; j<i; j++) {
                 applyGravity(solarSystem[j], solarSystem[i]);
             }
         }
-
+        
+        for(var i=1; i< solarSystem.length; i++) { //O(N^2)
+            for(var j=0; j<i; j++) {
+                applySpring(solarSystem[j], solarSystem[i]);
+            }
+        }
+        
         drawTree(); // real
         applyForceTree(); // real
         
@@ -484,7 +526,7 @@ function applyForceTree(){
 		requestAnimationFrame(drawAll);
     }
     
-// setInterval(drawAll, 160);  // run faster for debugging
+ //setInterval(drawAll, 16);  // run faster for debugging
  drawAll();
 
 
