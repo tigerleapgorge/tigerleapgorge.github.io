@@ -10,6 +10,8 @@
     var tokenArray = [];
     var ast = [];
 
+    var curNode;
+
 /*******         Vector Library                      ******/
     function vector(x, y) {
         if ( !(this instanceof vector) ) { // dont need new
@@ -59,13 +61,13 @@
 /*******                Graphics                      ******/
     var drawText = function(myStr, posVector) {
         ctx.font = "25px Arial";
-        ctx.fillStyle = "#0095DD";
-        ctx.fillText(myStr, posVector.x-10, posVector.y+7);
+        ctx.fillStyle = "OrangeRed";  // http://www.w3schools.com/cssref/css_colors.asp
+        ctx.fillText(myStr, posVector.x, posVector.y+20);
     };
 
-    var drawRect = function(position) {
-        ctx.fillStyle = "green";
-        ctx.fillRect(position.x, position.y, 20, 20);
+    var drawRect = function(position, color) {
+        ctx.fillStyle = color;
+        ctx.fillRect(position.x, position.y, 45, 45);
     };
 
     var drawLine = function(position1, position2) {
@@ -118,6 +120,10 @@
             console.log("x * y :", x, y);
             return (x * y);
         },
+        "/" : function*(x, y) {
+            console.log("x / y :", x, y);
+            return (x / y);
+        },
         "<" : function*(x, y) {
             console.log("x < y :", x, y);
             return (x < y);
@@ -148,10 +154,18 @@
         };
     };
 
+    var ContextList = []; // array of Context for visualization
+
 /*******                Interpreter                      ******/
     var interpretList = function*(input, context) {
         if (context === undefined) { // first time in, create primative library
-            return yield* interpretList (input, new Context(library) ); // Recurse -- load lib
+            var firstContext  = new Context(library);
+            var secondContext = new Context( {} , firstContext);
+            ContextList.push( firstContext );
+            ContextList.push( secondContext );
+            var finalResult = yield* interpretList (input, secondContext ); // Recurse -- load lib
+            ContextList.pop; // pop second context
+            return finalResult;
         } else if (input[0].value === "if") { // special form
             input[1].result = yield* interpret( input[1], context );
             if ( input[1].result ) { // Recurse
@@ -166,7 +180,7 @@
             console.log("defining:", context)
             return;
         } else if (input[0].value === "lambda") { // special form
-            return function* () { // RETURN A FUNCTION
+            return function* () { // closure
                 var formalArg = input[1].sexpr;
                 var actualArg = arguments;
 
@@ -178,7 +192,10 @@
                     localEnv[formalArg[i].value] = actualArg[i]; // bind 
                 }
                 var localContext = new Context(localEnv, context); // chain it with previous Env
-                return  yield* interpret(input[2], localContext); // Recurse
+                ContextList.push( localContext ); // add lambda context to the list
+                var lambdaResult = yield* interpret(input[2], localContext); // Recurse
+                ContextList.pop(); // must match push
+                return lambdaResult;
             }
         } else { // non-special form
             var list  = []; // for loop alternative to map
@@ -199,6 +216,7 @@
     };
 
     var interpret = function* (input, context) {
+        curNode = input; // used for visualizer
         if (input.type === "expr") { // Expression
              input.result = yield* interpretList(input.sexpr, context); // Recurse
              yield;
@@ -242,6 +260,22 @@
         }
     };
 
+    var visualizeEnv = function() {
+        for (var i = 0; i < ContextList.length; i++) {
+            var x_loc = 20;
+            for (var key in ContextList[i].scope) {
+                 var keyValPair = key;
+                 if( typeof ContextList[i].scope[key] !== "function" ) {
+                    keyValPair = key + " : " + ContextList[i].scope[key]; // display value if not a function
+                 }
+                 drawText(keyValPair, {x:x_loc, y:30*i + 50} );
+
+                 x_loc += 100;
+            }
+        } 
+    };
+
+
 // Drawing AST
     var visualizeList = function(input, parent) {
         for(var i = 0; i < input.length; i++){
@@ -253,7 +287,15 @@
     };
 
     var visualize = function(input) {
-        drawRect(input.pos);
+        var color = "white";
+        
+        if (input === curNode) {
+            color = "red"; // highlight currently interpreting node red
+        } else {
+            color = "yellow";
+        }
+        
+        drawRect(input.pos, color);
         drawText(input.value, input.pos);
 
         if (input.result !== undefined && 
@@ -300,8 +342,8 @@
     };
 
 // Hooke's law: F = -kX
-    var springLength = 77;
-    var springConstant = 1; 
+    var springLength = 50;  // default length of springs // Parameter tweak
+    var springConstant = 1; // Parameter tweak
     var applySpring = function(inputA, inputB) {
         var d = inputB.pos.subtract(inputA.pos);
         var displacement = d.magnitude() - springLength;
@@ -332,13 +374,13 @@
 
 
 // Coulomb's law: F = k q1 q2 / r^2
-    var chargeConstant = 50000; // k
+    var chargeConstant = 50000; // k  // Parameter tweak
     var applyRepulsion = function(inputA, inputB){
         var distance = inputB.pos.subtract(inputA.pos); // TODO: when input1 and input2 pos overlap
         var distance_magSquared = distance.magnitudeSquared(); // denominator
         var direction = distance.normalize(); // unit length
 
-        var delta_acc = direction.multiply(0.5 * chargeConstant / (distance_magSquared + 50 ) ) 
+        var delta_acc = direction.multiply(0.5 * chargeConstant / (distance_magSquared + 50 ) );   // Parameter tweak 
         inputA.a = inputA.a.add( delta_acc.neg() );  // Apply acceleration to A
         inputB.a = inputB.a.add( delta_acc );        // Apply acceleration to B
         return;
@@ -367,18 +409,21 @@
 /*******                Main                ******/
 
     function main(){
-        var sourceCode = "( ( define foo ( lambda (a b) (+ a b) ) ) (foo 1 2) )";
-        var sourceCode = "( ( define fib " +
-                         "    ( lambda (x)" + 
-                         "             ( if ( < x 2 ) " +  
-                         "                  x " + 
-                         "                  (* x ( fib (- x 1) )  )" +
-                         "  ) )        ) " +
-                         "  ( fib 5 ) " +
+        //var sourceCode = "( ( define foo ( lambda (a b) (+ a b) ) ) (foo 1 2) )";
+       
+        var sourceCode = "( ( define fib                            " +
+                         "    ( lambda (x)                          " + 
+                         "             ( if ( < x 2 )               " +  
+                         "                  x                       " + 
+                         "                  (* x ( fib (- x 1) )  ) " +
+                         "  ) )        )                            " +
+                         "  ( fib 5 )                               " +
                          ")";
+       
         //var sourceCode = "( ( lambda (x) x ) 3 )";
         //var sourceCode = "(+ 3 5)";
         //var sourceCode = "(1 2 3)";
+        //var sourceCode = "(/ 6 3)";
 
         tokenArray = sourceCode.replace(/\(/g, " ( ")
                                .replace(/\)/g, " ) ")
@@ -398,9 +443,15 @@
             
             //console.log("drawCall", frame); // top left frames
             ctx.clearRect(0, 0, canvas.width, canvas.height); // clear screen
+            /*
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            */
+            
             drawText("Frame: " + frame, {x:30, y:30}); // frame counter upper left
 
             initPvaList(ast, new vector(canvas.width/5,  canvas.height/5) ); // initialize Position, Velocity, Acceleration
+            visualizeEnv(); // draw "Context" aka symbol tables
             visualizeList(ast); // draw AST
             springList(ast); // O(N)
             repelList(ast);  // O(N^2)
@@ -436,7 +487,7 @@
             var step = gen.next();
             if(!step.done){
                 console.log(">>> Not Done: ", step.result);
-                window.setTimeout(interpretLoop, 50);  // interpreter timeout
+                window.setTimeout(interpretLoop, 500);  // interpreter timeout
             } else {
                 console.log(">>> Final Result: ", step.result);
             }
